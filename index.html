@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>My Planner</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232FA85F%22/><text x=%2250%22 y=%2266%22 font-size=%2258%22 text-anchor=%22middle%22>🗓️</text></svg>" />
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
@@ -347,6 +348,7 @@ function weekViewHtml(){
 
 function render(){
   seedMonday();
+  document.title = data.name ? data.name + "'s Planner" : "My Planner";
   const root=document.getElementById("root");
   const hr=new Date().getHours(); const greet=hr<12?"Good morning":hr<17?"Good afternoon":"Good evening";
   const dayList=data.tasks[curKey()]||[];
@@ -429,6 +431,26 @@ function render(){
 
 /* fix hero total for week view (heroTotal referenced before def workaround) */
 
+function startEditName(){
+  const el = document.getElementById("nameDisplay");
+  if (!el) return;
+  const current = data.name || "";
+  el.outerHTML = `<div style="display:flex;align-items:center;gap:6px;">
+    <input id="nameInput" value="${esc(current)}" placeholder="Your name" style="font-size:16px;font-weight:700;padding:4px 8px;border-radius:8px;border:none;background:rgba(255,255,255,.25);color:#fff;width:140px;"/>
+    <button data-act="saveName" style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;background:rgba(255,255,255,.25);color:#fff;">Save</button>
+  </div>`;
+  const inp = document.getElementById("nameInput");
+  inp.focus(); inp.select();
+  inp.onkeydown = e => { if(e.key==="Enter") saveName(); if(e.key==="Escape") render(); };
+  document.querySelector('[data-act="saveName"]').onclick = saveName;
+}
+function saveName(){
+  const inp = document.getElementById("nameInput");
+  const v = inp ? inp.value.trim() : "";
+  if (v) { pushUndo(); data.name = v; saveData(); }
+  render();
+}
+
 function wire(){
   const $=s=>document.getElementById(s);
   document.querySelectorAll("[data-act]").forEach(el=>{
@@ -464,6 +486,7 @@ function wire(){
       else if(act==="export"){ exportData(); }
       else if(act==="restore"){ $("fileInput").click(); }
       else if(act==="signout"){ signOut(auth); }
+      else if(act==="editName"){ startEditName(); }
     };
   });
   // Enter key on inputs
