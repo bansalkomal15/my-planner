@@ -160,6 +160,23 @@ function seedMonday(){
 }
 function addRecurring(text,cat,weekday){ const t=text.trim(); if(!t) return; pushUndo(); data.recurring=[...(data.recurring||[]),{id:"rec-"+Date.now(),text:t,cat,weekday}]; saveData(); render(); }
 function removeRecurring(id){ pushUndo(); data.recurring=(data.recurring||[]).filter(r=>r.id!==id); saveData(); render(); }
+function seedRecurringForKey(k){
+  if (k < todayKey()) return;
+  const dow = new Date(k.replace(/-/g,"/")).getDay();
+  let changed = false;
+  (data.recurring||[]).forEach(r=>{
+    if (r.weekday !== dow) return;
+    const seedKey = r.id+"-"+k;
+    if (data.meta.seededRecurring && data.meta.seededRecurring[seedKey]) return;
+    const list = data.tasks[k]||[];
+    if (!list.some(t=>t.recurringId===r.id)) {
+      data.tasks[k] = [...list, {id:"rc-"+Date.now()+"-"+Math.random(), text:r.text, cat:r.cat, done:false, prio:"none", review:false, recurringId:r.id}];
+      changed = true;
+    }
+    data.meta.seededRecurring = { ...(data.meta.seededRecurring||{}), [seedKey]:true };
+  });
+  if (changed) saveData();
+}
 
 /* tasks */
 function addTask(k,txt,c,prio){ const t=txt.trim(); if(!t) return; pushUndo(); data.tasks[k]=[...(data.tasks[k]||[]),{id:Date.now()+"-"+Math.random(),text:t,cat:c,done:false,prio,review:false}]; saveData(); render(); }
@@ -396,7 +413,7 @@ function recurringModalHtml(){
         <div style="font-weight:700;font-size:18px;color:${PAL.ink};display:flex;align-items:center;gap:8px;">🔁 Recurring Tasks</div>
         <button data-act="closeRecurring" style="font-size:20px;color:#a8a29e;line-height:1;">✕</button>
       </div>
-      <p style="font-size:13px;color:#78716c;margin:0 0 16px;">A running list of things that repeat every week (e.g. Fill Timesheet every Friday). These stay here for reference — they won't be added to your daily task lists automatically.</p>
+      <p style="font-size:13px;color:#78716c;margin:0 0 16px;">A running list of things that repeat every week (e.g. Fill Timesheet every Friday). Each one automatically appears in your Work or Personal list on the day you choose, going forward from today.</p>
       ${recurringInnerHtml()}
     </div>
   </div>`;
@@ -454,6 +471,8 @@ function render(){
   const wkStart=startOfWeek(date);
   const weekDays=Array.from({length:7},(_,i)=>addDays(wkStart,i));
   seedMonday();
+  if (view==="day") seedRecurringForKey(curKey());
+  else weekDays.forEach(d=>seedRecurringForKey(ymd(d)));
 
   document.title = data.name ? data.name + "'s Planner" : "My Planner";
   const root=document.getElementById("root");
