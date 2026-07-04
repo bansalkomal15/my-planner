@@ -83,6 +83,7 @@ const DEFAULT_ESS = { list:[{id:"phys",label:"Physical Activity (1 hour)"}], don
 
 const ymd = d => { const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
 const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+const addMonths = (d,n) => { const x=new Date(d); x.setMonth(x.getMonth()+n); return x; };
 const startOfWeek = d => { const x=new Date(d); const off=(x.getDay()+6)%7; x.setDate(x.getDate()-off); x.setHours(0,0,0,0); return x; };
 const esc = s => (s==null?"":String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 
@@ -467,12 +468,42 @@ function weekViewHtml(weekDays){
     `<div class="grid-13" style="margin:12px 0;">${periodPanelHtml()}<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;">${dayCards}</div></div>`;
 }
 
+function monthCalendarHtml(){
+  const y=date.getFullYear(), m=date.getMonth();
+  const firstOfMonth=new Date(y,m,1);
+  const lastOfMonth=new Date(y,m+1,0);
+  const startGrid=startOfWeek(firstOfMonth);
+  const endGrid=addDays(startOfWeek(lastOfMonth),6);
+  const cells=[]; let cur=new Date(startGrid);
+  while(cur<=endGrid){ cells.push(new Date(cur)); cur=addDays(cur,1); }
+  const headers=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(h=>`<div style="text-align:center;font-size:11px;font-weight:700;color:#a8a29e;text-transform:uppercase;">${h}</div>`).join("");
+  const dayCells=cells.map(d=>{
+    const k=ymd(d); const inMonth=d.getMonth()===m; const list=data.tasks[k]||[]; const doneN=list.filter(t=>t.done).length; const isT=k===todayKey();
+    return `<button data-act="openDay" data-k="${k}" style="text-align:left;border-radius:10px;padding:6px;min-height:60px;border:1px solid ${isT?PAL.work:"#E6DFC8"};background:${inMonth?"#fff":"#F2EEDD"};${isT?"box-shadow:0 0 0 1.5px "+PAL.work+";":""}display:flex;flex-direction:column;gap:3px;">
+      <span style="font-size:12px;font-weight:700;color:${inMonth?(isT?PAL.work:"#292520"):"#c9bf9e"};">${d.getDate()}</span>
+      ${list.length?`<span style="font-size:10px;font-weight:600;color:${doneN===list.length?PAL.success:"#a8a29e"};">${doneN}/${list.length}</span>`:""}
+    </button>`;
+  }).join("");
+  return card(`
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:8px;">${headers}</div>
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;">${dayCells}</div>
+  `);
+}
+
+function monthViewHtml(){
+  return `<div class="grid-13" style="margin:12px 0;">${periodPanelHtml()}${monthCalendarHtml()}</div>`;
+}
+
 function render(){
   const wkStart=startOfWeek(date);
   const weekDays=Array.from({length:7},(_,i)=>addDays(wkStart,i));
   seedMonday();
   if (view==="day") seedRecurringForKey(curKey());
-  else weekDays.forEach(d=>seedRecurringForKey(ymd(d)));
+  else if (view==="week") weekDays.forEach(d=>seedRecurringForKey(ymd(d)));
+  else if (view==="month") {
+    const y=date.getFullYear(), m=date.getMonth(); const daysInMonth=new Date(y,m+1,0).getDate();
+    for (let dn=1; dn<=daysInMonth; dn++) seedRecurringForKey(ymd(new Date(y,m,dn)));
+  }
 
   document.title = data.name ? data.name + "'s Planner" : "My Planner";
   const root=document.getElementById("root");
@@ -482,12 +513,33 @@ function render(){
   const totalAll=dayList.length+data.ess.list.length; const doneAll=dayList.filter(t=>t.done).length+essDone;
   const allDone=totalAll>0&&doneAll===totalAll;
   let wDone=0,wTotal=0; weekDays.forEach(d=>{const l=data.tasks[ymd(d)]||[]; wTotal+=l.length; wDone+=l.filter(t=>t.done).length;});
-  const heroDone=view==="day"?doneAll:wDone, heroTotal=view==="day"?totalAll:wTotal;
+  let mDone=0,mTotal=0;
+  { const y=date.getFullYear(), m=date.getMonth(); const daysInMonth=new Date(y,m+1,0).getDate();
+    for (let dn=1; dn<=daysInMonth; dn++){ const l=data.tasks[ymd(new Date(y,m,dn))]||[]; mTotal+=l.length; mDone+=l.filter(t=>t.done).length; } }
+  const heroDone = view==="day"?doneAll : view==="week"?wDone : mDone;
+  const heroTotal = view==="day"?totalAll : view==="week"?wTotal : mTotal;
   const hPct=heroTotal?Math.round(heroDone/heroTotal*100):0;
   const status=heroTotal===0?"Ready when you are":hPct===0?"Fresh start":hPct<40?"Building momentum":hPct<70?"Good progress":hPct<100?"Almost there":"All done!";
   const doy=Math.floor((date-new Date(date.getFullYear(),0,0))/86400000); const quote=QUOTES[((doy%QUOTES.length)+QUOTES.length)%QUOTES.length];
   const weekLabel=`${wkStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${weekDays[6].toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
+  const monthYearLabel = date.toLocaleDateString("en-US",{month:"long",year:"numeric"});
   const nm=data.name||userEmail.split("@")[0]||"You";
+  const today=new Date();
+  const isThisWeek = ymd(startOfWeek(date))===ymd(startOfWeek(today));
+  const isThisMonth = date.getFullYear()===today.getFullYear() && date.getMonth()===today.getMonth();
+
+  let bigTitle, smallLabel, jumpBtn;
+  if (view==="day") {
+    bigTitle = date.toLocaleDateString("en-US",{weekday:"long"});
+    smallLabel = date.toLocaleDateString("en-US",{month:"long",day:"numeric"});
+    jumpBtn = isToday() ? `<span style="font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.22);">Today</span>` : `<button data-act="today" style="font-size:12px;color:rgba(255,255,255,.75);">Today</button>`;
+  } else if (view==="week") {
+    bigTitle = "This Week"; smallLabel = weekLabel;
+    jumpBtn = isThisWeek ? "" : `<button data-act="today" style="font-size:12px;color:rgba(255,255,255,.75);">This week</button>`;
+  } else {
+    bigTitle = "This Month"; smallLabel = monthYearLabel;
+    jumpBtn = isThisMonth ? "" : `<button data-act="today" style="font-size:12px;color:rgba(255,255,255,.75);">This month</button>`;
+  }
 
   root.innerHTML = `
   <div id="confetti" style="position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:60;"></div>
@@ -505,22 +557,20 @@ function render(){
             ${undoStack.length?`<button data-act="undo" title="Undo" style="padding:8px;border-radius:999px;background:rgba(255,255,255,.18);color:#fff;">↺</button>`:""}
             <button data-act="signout" title="Sign out" style="padding:6px 14px;border-radius:999px;background:rgba(255,255,255,.18);color:#fff;font-size:13px;">Sign out</button>
             <div style="display:flex;border-radius:999px;background:rgba(255,255,255,.18);padding:4px;">
-              <button data-act="setView" data-view="day" style="padding:6px 16px;border-radius:999px;font-size:14px;font-weight:600;${view==="day"?"background:#161512;color:#fff;":"color:rgba(255,255,255,.85);"}">Day</button>
-              <button data-act="setView" data-view="week" style="padding:6px 16px;border-radius:999px;font-size:14px;font-weight:600;${view==="week"?"background:#161512;color:#fff;":"color:rgba(255,255,255,.85);"}">Week</button>
+              ${["day","week","month"].map(v=>`<button data-act="setView" data-view="${v}" style="padding:6px 14px;border-radius:999px;font-size:14px;font-weight:600;${view===v?"background:#161512;color:#fff;":"color:rgba(255,255,255,.85);"}">${v.charAt(0).toUpperCase()+v.slice(1)}</button>`).join("")}
             </div>
           </div>
         </div>
         <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <button data-act="prev" style="padding:8px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;">‹</button>
-            <div style="padding:0 4px;"><div style="font-size:28px;font-weight:700;line-height:1;font-family:Georgia,serif;">${view==="day"?date.toLocaleDateString("en-US",{weekday:"long"}):"This Week"}</div>
-              <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;"><span style="font-size:14px;color:rgba(255,255,255,.85);">${view==="day"?date.toLocaleDateString("en-US",{month:"long",day:"numeric"}):weekLabel}</span>
-              ${view==="day"&&isToday()?`<span style="font-size:10px;font-weight:700;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.22);">Today</span>`:`<button data-act="today" style="font-size:12px;color:rgba(255,255,255,.75);">${view==="day"?"Today":"This week"}</button>`}</div>
+            <div style="padding:0 4px;"><div style="font-size:26px;font-weight:700;line-height:1;font-family:Georgia,serif;">${bigTitle}</div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;"><span style="font-size:14px;color:rgba(255,255,255,.85);">${smallLabel}</span>${jumpBtn}</div>
             </div>
             <button data-act="next" style="padding:8px;border-radius:999px;background:rgba(255,255,255,.14);color:#fff;">›</button>
           </div>
           <div style="display:flex;align-items:center;gap:12px;">
-            <div style="text-align:right;"><div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.65);">${view==="day"?"Day score":"Week score"}</div>
+            <div style="text-align:right;"><div style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:rgba(255,255,255,.65);">${view==="day"?"Day score":view==="week"?"Week score":"Month score"}</div>
             <div style="font-weight:700;font-size:18px;line-height:1.2;">${status}</div><div style="font-size:12px;color:rgba(255,255,255,.75);">${heroDone} of ${heroTotal} complete</div></div>
             ${ringSvg(hPct,"#fff",76,7,`<div style="font-size:20px;font-weight:700;color:#fff;">${hPct}<span style="font-size:13px;">%</span></div>`,"rgba(255,255,255,.28)")}
           </div>
@@ -530,7 +580,7 @@ function render(){
 
     ${view==="day"?`<div style="position:relative;border-radius:16px;padding:14px 16px;margin-bottom:16px;border:1px solid #E6DFC8;box-shadow:0 1px 3px rgba(0,0,0,.05);display:flex;align-items:center;gap:12px;background:#FBF8EF;"><span>✨</span><p style="font-style:italic;font-weight:500;margin:0;color:#5C4A20;font-size:14px;font-family:Georgia,serif;">${esc(quote)}</p></div>`:""}
 
-    ${((view==="day"&&isToday())||view==="week")&&overdueList().length?`<div style="margin-bottom:16px;border-radius:16px;border:1px solid ${soft(PAL.remind,"55")};background:${soft(PAL.remind,"14")};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div style="font-size:14px;color:#8A4A16;">You have <b>${overdueList().length}</b> unfinished task(s) from earlier.</div><button data-act="rollOverdue" class="pillbtn" style="flex:0 0 auto;font-size:14px;padding:6px 14px;background:${PAL.remind};">Move to today →</button></div>`:""}
+    ${((view==="day"&&isToday())||view==="week"||view==="month")&&overdueList().length?`<div style="margin-bottom:16px;border-radius:16px;border:1px solid ${soft(PAL.remind,"55")};background:${soft(PAL.remind,"14")};padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><div style="font-size:14px;color:#8A4A16;">You have <b>${overdueList().length}</b> unfinished task(s) from earlier.</div><button data-act="rollOverdue" class="pillbtn" style="flex:0 0 auto;font-size:14px;padding:6px 14px;background:${PAL.remind};">Move to today →</button></div>`:""}
 
     ${view==="day"&&allDone?`<div style="margin-bottom:16px;border-radius:16px;border:1px solid ${soft(PAL.success,"45")};background:${soft(PAL.success,"16")};padding:12px 16px;display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#295C20;">🎉 Everything done for today. Excellent work, ${esc(nm)}!</div>`:""}
 
@@ -544,7 +594,7 @@ function render(){
           ${taskColumnsHtml()}
         </div>
       </div>
-    </div>`:weekViewHtml(weekDays)}
+    </div>`: view==="week" ? weekViewHtml(weekDays) : monthViewHtml()}
 
     <div style="margin-top:20px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:12px;color:#a8a29e;flex-wrap:wrap;">
       <button data-act="undo" ${undoStack.length?"":"disabled"} style="display:flex;align-items:center;gap:4px;color:#a8a29e;${undoStack.length?"":"opacity:.4;"}">↺ Undo</button><span>·</span>
@@ -608,8 +658,8 @@ function wire(){
     el.onclick=(ev)=>{
       const k=el.getAttribute("data-k"), id=el.getAttribute("data-id"), kind=el.getAttribute("data-kind"), cat=el.getAttribute("data-cat");
       if(act==="setView"){ view=el.getAttribute("data-view"); render(); }
-      else if(act==="prev"){ date=addDays(date, view==="day"?-1:-7); render(); }
-      else if(act==="next"){ date=addDays(date, view==="day"?1:7); render(); }
+      else if(act==="prev"){ date = view==="day"?addDays(date,-1) : view==="week"?addDays(date,-7) : addMonths(date,-1); render(); }
+      else if(act==="next"){ date = view==="day"?addDays(date,1) : view==="week"?addDays(date,7) : addMonths(date,1); render(); }
       else if(act==="today"){ date=new Date(); render(); }
       else if(act==="toggleTask"||act==="toggleTaskWk"){ toggleTask(k,id); }
       else if(act==="review"){ toggleReview(k,id); }
@@ -627,7 +677,15 @@ function wire(){
       else if(act==="pShift"){ pShift(kind,id); }
       else if(act==="pCarry"){ pCarry(kind); }
       else if(act==="pAddBtn"){ const i=$(kind+"Input"); pAdd(kind,i.value); }
-      else if(act==="setPrio"){ colPrio[cat]=el.getAttribute("data-prio"); render(); }
+      else if(act==="setPrio"){
+        colPrio[cat]=el.getAttribute("data-prio");
+        document.querySelectorAll(`[data-act="setPrio"][data-cat="${cat}"]`).forEach(btn=>{
+          const pr=btn.getAttribute("data-prio"); const prObj=PRIOS.find(p=>p.id===pr); const sel=pr===colPrio[cat];
+          btn.style.border = "1px solid " + (sel?prObj.color:"#E6DFC8");
+          btn.style.background = sel?soft(prObj.color,"1F"):"#fff";
+          btn.style.color = sel?(pr==="none"?"#78716c":prObj.color):"#a8a29e";
+        });
+      }
       else if(act==="addColBtn"){ const i=$("col-"+cat); addTask(curKey(), i.value, cat, colPrio[cat]); }
       else if(act==="toggleReminders"){ toggleReminders(); }
       else if(act==="testSound"){ fireReminder({label:"Test reminder"}); }
@@ -637,7 +695,14 @@ function wire(){
       else if(act==="restore"){ $("fileInput").click(); }
       else if(act==="signout"){ signOut(auth); }
       else if(act==="editName"){ startEditName(); }
-      else if(act==="setRecCat"){ recCat=cat; render(); openRecurringAfterRender(); }
+      else if(act==="setRecCat"){
+        recCat=cat;
+        document.querySelectorAll('[data-act="setRecCat"]').forEach(btn=>{
+          const btnCat=btn.getAttribute("data-cat"); const sel=btnCat===recCat;
+          btn.style.background = sel?(btnCat==="work"?PAL.work:PAL.personal):"transparent";
+          btn.style.color = sel?"#fff":"#78716c";
+        });
+      }
       else if(act==="addRecurringBtn"){ const i=$("recText"); addRecurring(i.value, recCat, recDay); showRecurringModal=true; }
       else if(act==="removeRecurringBtn"){ removeRecurring(id); showRecurringModal=true; }
       else if(act==="openRecurring"){ showRecurringModal=true; render(); }
@@ -649,7 +714,6 @@ function wire(){
   const fi=$("fileInput"); if(fi) fi.onchange=()=>importFile(fi);
   setupDrag();
 }
-function openRecurringAfterRender(){ showRecurringModal=true; render(); }
 
 /* ---------- auth screen ---------- */
 function renderLogin(){
