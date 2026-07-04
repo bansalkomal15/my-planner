@@ -15,12 +15,12 @@
   @keyframes flicker { 0%,100%{transform:translateX(-50%) scale(1) rotate(-3deg)} 50%{transform:translateX(-50%) scale(1.2) rotate(3deg)} }
   @keyframes slideup { 0%{transform:translate(-50%,20px);opacity:0} 100%{transform:translate(-50%,0);opacity:1} }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .spinner { width:30px;height:30px;border:3px solid #E4DECF;border-top-color:#2FA85F;border-radius:50%;animation:spin .8s linear infinite; }
+  .spinner { width:30px;height:30px;border:3px solid #E4DECF;border-top-color:#4C8C3C;border-radius:50%;animation:spin .8s linear infinite; }
   button { cursor: pointer; font-family: inherit; border: none; background: none; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #d9d0b0; border-radius: 4px; }
-  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  .grid-13 { display:grid; grid-template-columns: 1fr 2fr; gap:16px; align-items:start; }
+  .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:stretch; }
+  .grid-13 { display:grid; grid-template-columns: 1fr 2fr; gap:16px; align-items:stretch; }
   .wrap { max-width:1100px; margin:0 auto; padding:24px 12px; }
   .pillbtn { border-radius:999px; background:#161512; color:#fff; font-weight:600; }
   .pillbtn-outline { border-radius:999px; background:#fff; color:#161512; border:1.5px solid #161512; font-weight:600; }
@@ -28,6 +28,13 @@
   .drag-row.dragover { background: rgba(76,140,60,.12) !important; }
   .drag-handle { cursor: grab; color:#b9ae90; font-size:15px; line-height:1; touch-action:none; }
   .drag-handle:active { cursor: grabbing; }
+  .icon-btn { width:26px;height:26px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:12px;flex:0 0 auto;transition:filter .15s,transform .1s; }
+  .icon-btn:hover { filter:brightness(.94); }
+  .icon-btn:active { transform:scale(.92); }
+  .icon-btn.review { color:#A9762E; background:#F1E6C9; }
+  .icon-btn.review.active { background:#EFC672; color:#7A4E0F; }
+  .icon-btn.next { color:#5B6E57; background:#E7EEE0; }
+  .icon-btn.delete { color:#A85049; background:#F5E2DE; }
   @media (max-width:900px) {
     .grid-13 { grid-template-columns:1fr; }
   }
@@ -86,6 +93,7 @@ let view = "day";
 let date = new Date();
 let colPrio = { work:"none", personal:"none" };
 let recCat = "work", recDay = 5;
+let showRecurringModal = false;
 let undoStack = [];
 let saveTimer = null;
 let firedReminders = {};
@@ -149,23 +157,6 @@ function seedMonday(){
   }
   data.meta.seededMondays = { ...(data.meta.seededMondays||{}), [mk]:true };
   saveData();
-}
-function seedRecurringForKey(k){
-  if (k < todayKey()) return;
-  const dow = new Date(k.replace(/-/g,"/")).getDay();
-  let changed = false;
-  (data.recurring||[]).forEach(r=>{
-    if (r.weekday !== dow) return;
-    const seedKey = r.id+"-"+k;
-    if (data.meta.seededRecurring && data.meta.seededRecurring[seedKey]) return;
-    const list = data.tasks[k]||[];
-    if (!list.some(t=>t.recurringId===r.id)) {
-      data.tasks[k] = [...list, {id:"rc-"+Date.now()+"-"+Math.random(), text:r.text, cat:r.cat, done:false, prio:r.prio||"none", review:false, recurringId:r.id}];
-      changed = true;
-    }
-    data.meta.seededRecurring = { ...(data.meta.seededRecurring||{}), [seedKey]:true };
-  });
-  if (changed) saveData();
 }
 function addRecurring(text,cat,weekday){ const t=text.trim(); if(!t) return; pushUndo(); data.recurring=[...(data.recurring||[]),{id:"rec-"+Date.now(),text:t,cat,weekday}]; saveData(); render(); }
 function removeRecurring(id){ pushUndo(); data.recurring=(data.recurring||[]).filter(r=>r.id!==id); saveData(); render(); }
@@ -261,14 +252,14 @@ function taskRowHtml(t){
     ${t.prio&&t.prio!=="none"?`<span style="flex:0 0 auto;width:9px;height:9px;border-radius:2px;background:${prioColor(t.prio)};"></span>`:""}
     ${t.recurringId?`<span title="Recurring" style="flex:0 0 auto;font-size:12px;">🔁</span>`:""}
     <span style="flex:1;font-size:14px;min-width:0;overflow-wrap:break-word;${t.done?"text-decoration:line-through;color:#a8a29e;":"color:#292520;"}">${esc(t.text)}</span>
-    ${isWork&&t.review&&!t.done?`<span style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 6px;border-radius:999px;background:${soft(PAL.remind,"22")};color:#8A4A16;">In review</span>`:""}
-    ${isWork&&!t.done?`<button data-act="review" data-k="${curKey()}" data-id="${t.id}" title="Sent for manager review" style="flex:0 0 auto;padding:4px;border-radius:6px;color:${t.review?PAL.remind:"#cbd5d0"};background:${t.review?soft(PAL.remind,"1A"):"transparent"};">✈</button>`:""}
-    ${!t.done?`<button data-act="moveNext" data-k="${curKey()}" data-id="${t.id}" title="Move to next day" style="flex:0 0 auto;padding:4px;color:#cbd5d0;">→</button>`:""}
-    <button data-act="removeTask" data-k="${curKey()}" data-id="${t.id}" title="Delete" style="flex:0 0 auto;padding:4px;color:#cbd5d0;">🗑</button>
+    ${isWork&&t.review&&!t.done?`<span style="flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 6px;border-radius:999px;background:#F1E6C9;color:#7A4E0F;">In review</span>`:""}
+    ${isWork&&!t.done?`<button data-act="review" data-k="${curKey()}" data-id="${t.id}" title="Sent for manager review" class="icon-btn review ${t.review?"active":""}">✈</button>`:""}
+    ${!t.done?`<button data-act="moveNext" data-k="${curKey()}" data-id="${t.id}" title="Move to next day" class="icon-btn next">→</button>`:""}
+    <button data-act="removeTask" data-k="${curKey()}" data-id="${t.id}" title="Delete" class="icon-btn delete">🗑</button>
   </div>`;
 }
 
-function periodCardHtml(kind,title,accent){
+function periodSectionHtml(kind,title,accent){
   const list=pList(kind); const doneN=list.filter(w=>pStatus(w)==="done").length; const carry=pCarryCount(kind); const shiftLabel=kind==="week"?"Shift to next week":"Shift to next month";
   let items = list.map(w=>{
     const st=pStatus(w), days=pDays(w), done=st==="done";
@@ -282,8 +273,8 @@ function periodCardHtml(kind,title,accent){
       <div style="display:flex;align-items:flex-start;gap:6px;">
         <span class="drag-handle" style="margin-top:1px;">⠿</span>
         <span style="flex:1;font-size:14px;min-width:0;overflow-wrap:break-word;${done?"text-decoration:line-through;color:#a8a29e;":"color:#292520;"}">${esc(w.text)}</span>
-        <button data-act="pShift" data-kind="${kind}" data-id="${w.id}" title="${shiftLabel}" style="flex:0 0 auto;padding:2px;color:#cbd5d0;">→</button>
-        <button data-act="pRemove" data-kind="${kind}" data-id="${w.id}" style="flex:0 0 auto;padding:2px;color:#cbd5d0;">🗑</button>
+        <button data-act="pShift" data-kind="${kind}" data-id="${w.id}" title="${shiftLabel}" class="icon-btn next">→</button>
+        <button data-act="pRemove" data-kind="${kind}" data-id="${w.id}" title="Delete" class="icon-btn delete">🗑</button>
       </div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;flex-wrap:wrap;font-size:11px;">
         <div>${meta}</div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">${ctrls}</div>
@@ -292,7 +283,7 @@ function periodCardHtml(kind,title,accent){
   }).join("");
   if(!list.length) items=`<p style="font-size:14px;color:#b8ae8f;margin:4px 0;">${kind==="week"?"An ongoing task to do this week?":"A bigger task to track this month?"}</p>`;
   const inputId = kind+"Input";
-  return card(`
+  return `
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:6px;">
       <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:${PAL.ink};">${kind==="week"?"🗓":"📅"} ${esc(title)}</div>
       ${list.length?`<span style="font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;background:${soft(accent,"1F")};color:${accent};">${doneN}/${list.length}</span>`:""}
@@ -303,7 +294,17 @@ function periodCardHtml(kind,title,accent){
       <input id="${inputId}" placeholder="Add a ${kind==="week"?"weekly":"monthly"} task…" style="flex:1;min-width:0;font-size:14px;padding:8px 12px;border-radius:999px;border:1px solid #DDD3AF;background:#fff;"/>
       <button data-act="pAddBtn" data-kind="${kind}" class="pillbtn" style="flex:0 0 auto;width:36px;height:36px;background:${accent};font-size:18px;">+</button>
     </div>
-  `, accent);
+  `;
+}
+
+function periodPanelHtml(){
+  const monthName = date.toLocaleDateString("en-US",{month:"long"});
+  return `<div style="height:100%;display:flex;flex-direction:column;border-radius:16px;background:#FBF8EF;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid #E6DFC8;padding:16px;min-width:0;">
+    ${periodSectionHtml("week","This Week",PAL.week)}
+    <div style="height:1px;background:#E6DFC8;margin:16px 0;"></div>
+    ${periodSectionHtml("month","This Month · "+monthName,PAL.month)}
+    <div style="flex:1;min-height:0;"></div>
+  </div>`;
 }
 
 function habitsCardHtml(){
@@ -314,7 +315,7 @@ function habitsCardHtml(){
       <div style="display:flex;align-items:center;gap:10px;">
         <button data-act="toggleHabit" data-id="${h.id}" style="flex:0 0 auto;width:24px;height:24px;border-radius:999px;border:2px solid ${done?PAL.habit:"#cbd5d0"};background:${done?PAL.habit:"transparent"};color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;">${done?"✓":""}</button>
         <span style="flex:1;font-size:14px;font-weight:500;min-width:0;overflow-wrap:break-word;${done?"color:#78716c;":"color:#292520;"}">${esc(h.label)}</span>
-        <button data-act="removeHabit" data-id="${h.id}" style="flex:0 0 auto;padding:2px;color:#cbd5d0;">✕</button>
+        <button data-act="removeHabit" data-id="${h.id}" class="icon-btn delete" style="width:22px;height:22px;">✕</button>
       </div>
       <div style="margin-top:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -359,32 +360,46 @@ function remindersCardHtml(){
   `, PAL.remind);
 }
 
-function recurringCardHtml(){
+function recurringLinkHtml(){
+  const n = (data.recurring||[]).length;
+  return `<button data-act="openRecurring" class="pillbtn-outline" style="align-self:flex-start;font-size:13px;padding:9px 18px;display:inline-flex;align-items:center;gap:6px;">🔁 Manage Recurring Tasks${n?` <span style="font-size:11px;font-weight:700;background:#161512;color:#fff;border-radius:999px;padding:1px 7px;">${n}</span>`:""}</button>`;
+}
+
+function recurringInnerHtml(){
   const list = data.recurring || [];
   const dayLabel = n => (WEEKDAYS.find(w=>w.n===n)||{}).s || "";
   const rows = list.length ? list.map(r=>`<div style="display:flex;align-items:center;gap:8px;border-radius:12px;border:1px solid #E6DFC8;background:#fff;padding:8px 12px;">
       <span style="flex:0 0 auto;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:${soft(PAL.recur,"1F")};color:${PAL.recur};">${dayLabel(r.weekday)}</span>
       <span style="flex:1;font-size:14px;color:#292520;min-width:0;overflow-wrap:break-word;">${esc(r.text)}</span>
       <span style="flex:0 0 auto;font-size:11px;color:#a8a29e;">${r.cat==="work"?"Work":"Personal"}</span>
-      <button data-act="removeRecurringBtn" data-id="${r.id}" style="flex:0 0 auto;padding:2px;color:#cbd5d0;">🗑</button>
-    </div>`).join("") : `<p style="font-size:14px;color:#b8ae8f;margin:4px 0;">No recurring tasks yet — e.g. "Fill Timesheet" every Friday.</p>`;
+      <button data-act="removeRecurringBtn" data-id="${r.id}" class="icon-btn delete">🗑</button>
+    </div>`).join("") : `<p style="font-size:14px;color:#b8ae8f;margin:4px 0;">Nothing added yet — e.g. "Fill Timesheet" every Friday.</p>`;
   const dayOptions = WEEKDAYS.map(w=>`<option value="${w.n}" ${recDay===w.n?"selected":""}>${w.s}</option>`).join("");
-  return card(`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-      <div style="display:flex;align-items:center;gap:8px;font-weight:700;color:${PAL.ink};">🔁 Recurring Tasks</div>
-      <span style="font-size:11px;color:#a8a29e;">auto-added weekly</span>
-    </div>
-    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;">${rows}</div>
+  return `
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;max-height:40vh;overflow-y:auto;">${rows}</div>
     <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-      <input id="recText" placeholder="Task (e.g. Fill Timesheet)" style="flex:1 1 160px;min-width:0;font-size:14px;padding:8px 12px;border-radius:999px;border:1px solid #DDD3AF;background:#fff;"/>
-      <select id="recDaySel" data-act="setRecDay" style="padding:8px 10px;border-radius:999px;border:1px solid #DDD3AF;font-size:13px;background:#fff;">${dayOptions}</select>
+      <input id="recText" placeholder="Task (e.g. Fill Timesheet)" style="flex:1 1 160px;min-width:0;font-size:14px;padding:9px 12px;border-radius:999px;border:1px solid #DDD3AF;background:#fff;"/>
+      <select id="recDaySel" data-act="setRecDay" style="padding:9px 10px;border-radius:999px;border:1px solid #DDD3AF;font-size:13px;background:#fff;">${dayOptions}</select>
       <div style="display:flex;border-radius:999px;background:#F1EBD8;padding:3px;">
-        <button data-act="setRecCat" data-cat="work" style="padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;${recCat==="work"?"background:"+PAL.work+";color:#fff;":"color:#78716c;"}">Work</button>
-        <button data-act="setRecCat" data-cat="personal" style="padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;${recCat==="personal"?"background:"+PAL.personal+";color:#fff;":"color:#78716c;"}">Personal</button>
+        <button data-act="setRecCat" data-cat="work" style="padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;${recCat==="work"?"background:"+PAL.work+";color:#fff;":"color:#78716c;"}">Work</button>
+        <button data-act="setRecCat" data-cat="personal" style="padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;${recCat==="personal"?"background:"+PAL.personal+";color:#fff;":"color:#78716c;"}">Personal</button>
       </div>
-      <button data-act="addRecurringBtn" class="pillbtn" style="flex:0 0 auto;padding:8px 18px;background:${PAL.recur};font-size:14px;">Add</button>
+      <button data-act="addRecurringBtn" class="pillbtn" style="flex:0 0 auto;padding:9px 18px;background:${PAL.recur};font-size:14px;">Add</button>
     </div>
-  `, PAL.recur);
+  `;
+}
+
+function recurringModalHtml(){
+  return `<div data-act="closeRecurringBackdrop" style="position:fixed;inset:0;background:rgba(20,18,10,.45);z-index:70;display:flex;align-items:center;justify-content:center;padding:16px;">
+    <div onclick="event.stopPropagation()" style="background:#FBF8EF;border-radius:20px;max-width:520px;width:100%;max-height:88vh;overflow:auto;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.35);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:18px;color:${PAL.ink};display:flex;align-items:center;gap:8px;">🔁 Recurring Tasks</div>
+        <button data-act="closeRecurring" style="font-size:20px;color:#a8a29e;line-height:1;">✕</button>
+      </div>
+      <p style="font-size:13px;color:#78716c;margin:0 0 16px;">A running list of things that repeat every week (e.g. Fill Timesheet every Friday). These stay here for reference — they won't be added to your daily task lists automatically.</p>
+      ${recurringInnerHtml()}
+    </div>
+  </div>`;
 }
 
 function taskColumnsHtml(){
@@ -393,7 +408,7 @@ function taskColumnsHtml(){
     const doneN=items.filter(t=>t.done).length; const pct=items.length?Math.round(doneN/items.length*100):0;
     const prioBtns=PRIOS.map(pr=>{ const sel=colPrio[s.id]===pr.id; return `<button data-act="setPrio" data-cat="${s.id}" data-prio="${pr.id}" style="display:flex;align-items:center;gap:4px;padding:2px 10px;border-radius:999px;font-size:11px;font-weight:500;border:1px solid ${sel?pr.color:"#E6DFC8"};color:${sel?(pr.id==="none"?"#78716c":pr.color):"#a8a29e"};background:${sel?soft(pr.color,"1F"):"#fff"};"><span style="width:8px;height:8px;border-radius:999px;background:${pr.color};${pr.id==="none"?"border:1px solid #cbd5d0;":""}"></span>${pr.label}</button>`; }).join("");
     const rows = items.length?items.map(t=>taskRowHtml(t)).join(""):`<p style="font-size:14px;color:#b8ae8f;padding:4px 0;">Add your first task above.</p>`;
-    return `<div style="border-radius:16px;background:#FBF8EF;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid ${soft(s.color,"40")};padding:16px;min-width:0;">
+    return `<div style="display:flex;flex-direction:column;height:100%;border-radius:16px;background:#FBF8EF;box-shadow:0 1px 3px rgba(0,0,0,.06);border:1px solid ${soft(s.color,"40")};padding:16px;min-width:0;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
         ${ringSvg(pct,s.color,46,5,`<span style="font-size:12px;font-weight:700;color:${s.color};">${doneN}/${items.length}</span>`)}
         <div style="flex:1;min-width:0;"><div style="display:flex;align-items:center;gap:6px;font-weight:700;color:${PAL.ink};">${s.id==="work"?"💼":"👤"} ${s.label}</div>
@@ -407,15 +422,9 @@ function taskColumnsHtml(){
         <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap;"><span style="font-size:11px;color:#a8a29e;margin-right:2px;">Priority</span>${prioBtns}</div>
       </div>
       <div style="display:flex;flex-direction:column;gap:6px;">${rows}</div>
+      <div style="flex:1;min-height:0;"></div>
     </div>`;
   }).join("") + `</div>`;
-}
-
-function periodColumnHtml(){
-  return `<div style="display:flex;flex-direction:column;gap:16px;">
-    ${periodCardHtml("week","This Week",PAL.week)}
-    ${periodCardHtml("month","This Month · "+date.toLocaleDateString("en-US",{month:"long"}),PAL.month)}
-  </div>`;
 }
 
 function weekViewHtml(weekDays){
@@ -438,15 +447,13 @@ function weekViewHtml(weekDays){
     </div>`;
   }).join("");
   return streakCard +
-    `<div class="grid-13" style="margin:12px 0;">${periodColumnHtml()}<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;">${dayCards}</div></div>`;
+    `<div class="grid-13" style="margin:12px 0;">${periodPanelHtml()}<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;">${dayCards}</div></div>`;
 }
 
 function render(){
   const wkStart=startOfWeek(date);
   const weekDays=Array.from({length:7},(_,i)=>addDays(wkStart,i));
   seedMonday();
-  if (view==="day") seedRecurringForKey(curKey());
-  else weekDays.forEach(d=>seedRecurringForKey(ymd(d)));
 
   document.title = data.name ? data.name + "'s Planner" : "My Planner";
   const root=document.getElementById("root");
@@ -511,10 +518,10 @@ function render(){
     ${view==="day"?`<div style="display:flex;flex-direction:column;gap:16px;">
       ${habitsCardHtml()}
       <div class="grid-13">
-        ${periodColumnHtml()}
+        ${periodPanelHtml()}
         <div style="display:flex;flex-direction:column;gap:16px;">
           ${remindersCardHtml()}
-          ${recurringCardHtml()}
+          ${recurringLinkHtml()}
           ${taskColumnsHtml()}
         </div>
       </div>
@@ -527,7 +534,8 @@ function render(){
       <input id="fileInput" type="file" accept="application/json,.json" style="display:none;"/>
     </div>
     <p style="text-align:center;font-size:12px;color:#a8a29e;margin-top:8px;">Saved to the cloud · Syncs across your devices · Signed in as ${esc(userEmail)}</p>
-  </div>`;
+  </div>
+  ${showRecurringModal ? recurringModalHtml() : ""}`;
 
   wire();
 }
@@ -610,18 +618,19 @@ function wire(){
       else if(act==="restore"){ $("fileInput").click(); }
       else if(act==="signout"){ signOut(auth); }
       else if(act==="editName"){ startEditName(); }
-      else if(act==="setRecCat"){ recCat=cat; render(); }
-      else if(act==="addRecurringBtn"){ const i=$("recText"); addRecurring(i.value, recCat, recDay); }
-      else if(act==="removeRecurringBtn"){ removeRecurring(id); }
+      else if(act==="setRecCat"){ recCat=cat; render(); openRecurringAfterRender(); }
+      else if(act==="addRecurringBtn"){ const i=$("recText"); addRecurring(i.value, recCat, recDay); showRecurringModal=true; }
+      else if(act==="removeRecurringBtn"){ removeRecurring(id); showRecurringModal=true; }
+      else if(act==="openRecurring"){ showRecurringModal=true; render(); }
+      else if(act==="closeRecurring"||act==="closeRecurringBackdrop"){ showRecurringModal=false; render(); }
     };
-    // prevent drag-handle button clicks from toggling parent drag start issues
-    if (el.classList && el.classList.contains("taskrow")) { /* noop */ }
   });
-  const enterMap=[["habitInput",()=>addHabit($("habitInput").value)],["weekInput",()=>pAdd("week",$("weekInput").value)],["monthInput",()=>pAdd("month",$("monthInput").value)],["col-work",()=>addTask(curKey(),$("col-work").value,"work",colPrio.work)],["col-personal",()=>addTask(curKey(),$("col-personal").value,"personal",colPrio.personal)],["recText",()=>{ const i=$("recText"); addRecurring(i.value, recCat, recDay); }]];
+  const enterMap=[["habitInput",()=>addHabit($("habitInput").value)],["weekInput",()=>pAdd("week",$("weekInput").value)],["monthInput",()=>pAdd("month",$("monthInput").value)],["col-work",()=>addTask(curKey(),$("col-work").value,"work",colPrio.work)],["col-personal",()=>addTask(curKey(),$("col-personal").value,"personal",colPrio.personal)],["recText",()=>{ const i=$("recText"); addRecurring(i.value, recCat, recDay); showRecurringModal=true; }]];
   enterMap.forEach(([idn,fn])=>{ const el=$(idn); if(el) el.onkeydown=e=>{ if(e.key==="Enter") fn(); }; });
   const fi=$("fileInput"); if(fi) fi.onchange=()=>importFile(fi);
   setupDrag();
 }
+function openRecurringAfterRender(){ showRecurringModal=true; render(); }
 
 /* ---------- auth screen ---------- */
 function renderLogin(){
